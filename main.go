@@ -5,9 +5,11 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/sessions"
 	"github.com/pquerna/otp/totp"
+	"github.com/stenstromen/doggate/db"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -155,6 +157,10 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	users[user.Username] = &user
 	json.NewEncoder(w).Encode(user)
+
+	if err := db.CreateUser(user.Username, user.Password, user.TOTPSecret); err != nil {
+		log.Printf("Failed to create user: %v", err)
+	}
 }
 
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -356,6 +362,20 @@ func RegistrationHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		log.Fatal("MYSQL_DSN environment variable is not set")
+	}
+
+	dbInstance, err := db.New(dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := dbInstance.InitializeDB(); err != nil {
+		log.Fatal(err)
+	}
+
 	r := http.NewServeMux()
 	r.HandleFunc("POST /register", RegisterHandler)
 	r.HandleFunc("GET /register", RegistrationHandler)

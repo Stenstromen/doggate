@@ -2,6 +2,8 @@ module github.com/stenstromen/doggate
 
 go 1.22
 
+replace github.com/stenstromen/doggate => /
+
 require github.com/pquerna/otp v1.4.0
 
 require (
