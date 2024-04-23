@@ -1,8 +1,9 @@
 package db
 
 import (
-	"encoding/json"
+	"bytes"
 	"html/template"
+	"log"
 	"net/http"
 
 	"github.com/gorilla/sessions"
@@ -44,8 +45,12 @@ func VerifyOtpHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OTP verified, logged in successfully"))
 }
 
-func OtpHandler(w http.ResponseWriter, r *http.Request) {
-	tmpl := template.Must(template.New("otp").Parse(`
+type PageData struct {
+	Username string
+}
+
+func (db *DB) OtpHandler(username string) string {
+	tmplString := `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -106,54 +111,53 @@ func OtpHandler(w http.ResponseWriter, r *http.Request) {
         </form>
     </div>
 </body>
-</html>
-    `))
-	tmpl.Execute(w, map[string]interface{}{
-		"Username": r.URL.Query().Get("username"),
-	})
+</html>`
+
+	tmpl, err := template.New("otp").Parse(tmplString)
+	if err != nil {
+		log.Fatal("Error parsing template:", err)
+	}
+
+	data := PageData{Username: username}
+	var tplBuffer bytes.Buffer
+	if err := tmpl.Execute(&tplBuffer, data); err != nil {
+		log.Fatal("Error executing template:", err)
+	}
+
+	return tplBuffer.String()
 }
 
-func AuthenticateHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	username := r.Form.Get("username")
-	password := r.Form.Get("password")
-
+func (db *DB) AuthenticateHandler(username, password string) (bool, error) {
 	user, ok := users[username]
 	if !ok || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil {
-		http.Redirect(w, r, "/login?error=invalid", http.StatusSeeOther)
-		return
+		return false, nil
 	}
 
-	http.Redirect(w, r, "/otp?username="+username, http.StatusSeeOther)
+	return true, nil
 }
 
-func RegisterHandler(w http.ResponseWriter, r *http.Request) {
+func (db *DB) RegisterHandler(username, password string) (User, error) {
 	var user User
-	err := json.NewDecoder(r.Body).Decode(&user)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	user.Username = username
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
-		return
+		log.Fatal(err)
 	}
 	user.Password = string(hashedPassword)
 
 	totpSecret, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      "DogGate",
-		AccountName: user.Username,
+		AccountName: username,
 	})
 	if err != nil {
-		http.Error(w, "Failed to generate TOTP secret", http.StatusInternalServerError)
-		return
+		log.Fatal(err)
 	}
 	user.TOTPSecret = totpSecret.Secret()
 
 	users[user.Username] = &user
-	json.NewEncoder(w).Encode(user)
+
+	return user, nil
 }
 
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
