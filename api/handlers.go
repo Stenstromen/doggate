@@ -22,6 +22,13 @@ func Handlers(db *db.DB) *http.ServeMux {
 
 	r := http.NewServeMux()
 
+	r.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
+		loginPage := db.LoginHandler()
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(loginPage))
+	})
+
 	r.HandleFunc("POST /register", func(w http.ResponseWriter, r *http.Request) {
 		var userRequest UserRequest
 		if err := json.NewDecoder(r.Body).Decode(&userRequest); err != nil {
@@ -41,12 +48,20 @@ func Handlers(db *db.DB) *http.ServeMux {
 		json.NewEncoder(w).Encode(user)
 
 	})
+
+	r.HandleFunc("GET /register", func(w http.ResponseWriter, r *http.Request) {
+		registerPage := db.RegistrationHandler()
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(registerPage))
+	})
+
 	r.HandleFunc("POST /auth", func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		username := r.Form.Get("username")
 		password := r.Form.Get("password")
 
-		auth, err := db.AuthenticateHandler(username, password)
+		auth, err := db.AuthenticateHandler(w, r, username, password)
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -60,6 +75,7 @@ func Handlers(db *db.DB) *http.ServeMux {
 			http.Redirect(w, r, "/otp?username="+username, http.StatusSeeOther)
 		}
 	})
+
 	r.HandleFunc("GET /otp", func(w http.ResponseWriter, r *http.Request) {
 		username := r.URL.Query().Get("username")
 		if username == "" {
@@ -74,13 +90,37 @@ func Handlers(db *db.DB) *http.ServeMux {
 		w.Write([]byte(otpPage))
 	})
 
-	/* 	r.HandleFunc("GET /register", RegistrationHandler)
-	   	r.HandleFunc("GET /login", LoginHandler)
-	   	r.HandleFunc("/auth", AuthenticateHandler)
-	   	r.HandleFunc("/otp", OtpHandler)
-	   	r.HandleFunc("/verify-otp", VerifyOtpHandler)
-	   	r.HandleFunc("/validate", ValidateSessionHandler) */
+	r.HandleFunc("POST /verify-otp", func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		username := r.Form.Get("username")
+		otp := r.Form.Get("otp")
+
+		if username == "" || otp == "" {
+			http.Error(w, "Username and OTP are required", http.StatusBadRequest)
+			return
+		}
+
+		auth := db.VerifyOtpHandler(w, r, username, otp)
+
+		if !auth {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+
+	})
+
+	r.HandleFunc("GET /validate", func(w http.ResponseWriter, r *http.Request) {
+		session := db.ValidateSessionHandler(w, r)
+
+		if !session {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	})
 
 	return r
-
 }
