@@ -12,13 +12,9 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
-)
 
-type User struct {
-	Username   string
-	Password   string
-	TOTPSecret string
-}
+	model "github.com/stenstromen/doggate/model"
+)
 
 var store *sessions.CookieStore
 
@@ -68,10 +64,6 @@ func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username,
 	}
 
 	return true
-}
-
-type PageData struct {
-	Username string
 }
 
 func (db *DB) OtpHandler(username string) string {
@@ -143,7 +135,7 @@ func (db *DB) OtpHandler(username string) string {
 		log.Fatal("Error parsing template:", err)
 	}
 
-	data := PageData{Username: username}
+	data := model.PageData{Username: username}
 	var tplBuffer bytes.Buffer
 	if err := tmpl.Execute(&tplBuffer, data); err != nil {
 		log.Fatal("Error executing template:", err)
@@ -185,13 +177,13 @@ func (db *DB) AuthenticateHandler(w http.ResponseWriter, r *http.Request, userna
 	return true, nil
 }
 
-func (db *DB) RegisterHandler(username, password string) (User, error) {
-	var user User
+func (db *DB) RegisterHandler(username, password string) (model.User, error) {
+	var user model.User
 	user.Username = username
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return User{}, err
+		return model.User{}, err
 	}
 	user.Password = string(hashedPassword)
 
@@ -200,13 +192,13 @@ func (db *DB) RegisterHandler(username, password string) (User, error) {
 		AccountName: username,
 	})
 	if err != nil {
-		return User{}, err
+		return model.User{}, err
 	}
 	user.TOTPSecret = totpSecret.Secret()
 
 	_, err = db.Conn.Exec("INSERT INTO users (username, password, totp_secret) VALUES (?, ?, ?)", username, user.Password, user.TOTPSecret)
 	if err != nil {
-		return User{}, err
+		return model.User{}, err
 	}
 
 	return user, nil

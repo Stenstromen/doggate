@@ -5,18 +5,8 @@ import (
 	"net/http"
 
 	"github.com/stenstromen/doggate/db"
+	model "github.com/stenstromen/doggate/model"
 )
-
-type User struct {
-	Username   string
-	Password   string
-	TOTPSecret string
-}
-
-type UserRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
 
 func Handlers(db *db.DB) *http.ServeMux {
 
@@ -30,7 +20,7 @@ func Handlers(db *db.DB) *http.ServeMux {
 	})
 
 	r.HandleFunc("POST /register", func(w http.ResponseWriter, r *http.Request) {
-		var userRequest UserRequest
+		var userRequest model.UserRequest
 		if err := json.NewDecoder(r.Body).Decode(&userRequest); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
