@@ -39,6 +39,26 @@ func Handlers(db *db.DB) *http.ServeMux {
 
 	})
 
+	r.HandleFunc("DELETE /delete/{username}", func(w http.ResponseWriter, r *http.Request) {
+		username := r.PathValue("username")
+		if username == "" {
+			http.Error(w, "Username is required", http.StatusBadRequest)
+			return
+		}
+
+		res, err := db.DeleteUser(username)
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(res)
+
+	})
+
 	r.HandleFunc("GET /register", func(w http.ResponseWriter, r *http.Request) {
 		registerPage := db.RegistrationHandler()
 		w.Header().Set("Content-Type", "text/html")
@@ -97,7 +117,7 @@ func Handlers(db *db.DB) *http.ServeMux {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 
 	})
 

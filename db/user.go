@@ -204,6 +204,15 @@ func (db *DB) RegisterHandler(username, password string) (model.User, error) {
 	return user, nil
 }
 
+func (db *DB) DeleteUser(username string) (bool, error) {
+	_, err := db.Conn.Exec("DELETE FROM users WHERE username = ?", username)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 func (db *DB) LoginHandler() string {
 	tmplString := `<!DOCTYPE html>
 	<html lang="en">
