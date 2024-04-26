@@ -63,6 +63,13 @@ func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username,
 		return false
 	}
 
+	redirectURL, ok := session.Values["redirect-url"].(string)
+	if !ok || redirectURL == "" {
+		redirectURL = "/"
+	}
+
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+
 	return true
 }
 
@@ -213,7 +220,18 @@ func (db *DB) DeleteUser(username string) (bool, error) {
 	return true, nil
 }
 
-func (db *DB) LoginHandler() string {
+func (db *DB) LoginHandler(w http.ResponseWriter, r *http.Request, rd string) string {
+
+	session, err := store.Get(r, "session-name")
+	if err != nil {
+		fmt.Println("Session error")
+	}
+
+	session.Values["redirect-url"] = rd
+	if err := session.Save(r, w); err != nil {
+		fmt.Println("Error saving session")
+	}
+
 	tmplString := `<!DOCTYPE html>
 	<html lang="en">
 	<head>

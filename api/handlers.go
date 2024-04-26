@@ -13,7 +13,13 @@ func Handlers(db *db.DB) *http.ServeMux {
 	r := http.NewServeMux()
 
 	r.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
-		loginPage := db.LoginHandler()
+		rd := r.URL.Query().Get("rd")
+		if rd == "" {
+			http.Error(w, "Redirect URL is required", http.StatusBadRequest)
+			return
+		}
+
+		loginPage := db.LoginHandler(w, r, rd)
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(loginPage))
@@ -116,9 +122,6 @@ func Handlers(db *db.DB) *http.ServeMux {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-
 	})
 
 	r.HandleFunc("GET /validate", func(w http.ResponseWriter, r *http.Request) {
