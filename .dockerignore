@@ -1,0 +1,6 @@
+README.md
+.secret
+dbdata
+.gitignore
+.dockerignore
+.DS_Store
