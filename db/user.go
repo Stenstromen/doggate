@@ -68,6 +68,15 @@ func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username,
 		redirectURL = "/"
 	}
 
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+	}
+
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 
 	return true
@@ -181,6 +190,15 @@ func (db *DB) AuthenticateHandler(w http.ResponseWriter, r *http.Request, userna
 		return false, fmt.Errorf("failed to save session: %v", err)
 	}
 
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+	}
+
 	return true, nil
 }
 
@@ -221,7 +239,6 @@ func (db *DB) DeleteUser(username string) (bool, error) {
 }
 
 func (db *DB) LoginHandler(w http.ResponseWriter, r *http.Request, rd string) string {
-
 	session, err := store.Get(r, "session-name")
 	if err != nil {
 		fmt.Println("Session error")

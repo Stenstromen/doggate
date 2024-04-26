@@ -101,6 +101,16 @@ func Handlers(db *db.DB) *http.ServeMux {
 
 		otpPage := db.OtpHandler(username)
 
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(otpPage))
@@ -132,6 +142,15 @@ func Handlers(db *db.DB) *http.ServeMux {
 			return
 		}
 
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 
