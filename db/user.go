@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/gorilla/sessions"
@@ -25,6 +26,15 @@ func init() {
 	}
 
 	store = sessions.NewCookieStore([]byte(secretKey))
+}
+
+func getDomainFromURL(redirectURL string) (string, error) {
+	parsedURL, err := url.Parse(redirectURL)
+	if err != nil {
+		return "", err
+	}
+	fmt.Println("Hostname:", parsedURL.Hostname())
+	return parsedURL.Hostname(), nil
 }
 
 func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username, otp string) bool {
@@ -58,14 +68,22 @@ func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username,
 
 	session.Values["authenticated"] = true
 	session.Values["username"] = username
-	if err := session.Save(r, w); err != nil {
-		log.Printf("Error saving session: %v", err)
-		return false
-	}
 
 	redirectURL, ok := session.Values["redirect-url"].(string)
 	if !ok || redirectURL == "" {
 		redirectURL = "/"
+	}
+	domain, err := getDomainFromURL(redirectURL)
+	if err != nil {
+		log.Printf("Error parsing domain from URL: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return false
+	}
+	session.Options.Domain = domain
+
+	if err := session.Save(r, w); err != nil {
+		log.Printf("Error saving session: %v", err)
+		return false
 	}
 
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -78,7 +96,6 @@ func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username,
 	}
 
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-
 	return true
 }
 
