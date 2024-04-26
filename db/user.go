@@ -322,7 +322,13 @@ func (db *DB) ValidateSessionHandler(w http.ResponseWriter, r *http.Request) boo
 		http.Error(w, "Session error", http.StatusInternalServerError)
 	}
 
+	fmt.Println("Cookie values:", r.Header.Get("Cookie"))
+
+	fmt.Println("Session values:", session.Values)
+
 	if auth, ok := session.Values["authenticated"].(bool); ok && auth {
+		fmt.Println("Session values:", session.Values)
+		fmt.Println("Cookie values:", r.Header.Get("Cookie"))
 		return true
 	}
 
