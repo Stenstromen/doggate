@@ -80,6 +80,8 @@ func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username,
 		return false
 	}
 	session.Options.Domain = domain
+	session.Options.Secure = true
+	session.Options.HttpOnly = true
 
 	if err := session.Save(r, w); err != nil {
 		log.Printf("Error saving session: %v", err)
