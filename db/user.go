@@ -203,6 +203,15 @@ func (db *DB) AuthenticateHandler(w http.ResponseWriter, r *http.Request, userna
 		return false, nil
 	}
 
+	parsedURL, err := url.Parse(rd)
+	if err != nil {
+		return false, fmt.Errorf("error parsing redirect URL: %v", err)
+	}
+
+	domain := parsedURL.Hostname()
+
+	fmt.Println("Domain:", domain)
+
 	session.Values["authenticated"] = true
 	session.Values["username"] = username
 	session.Values["redirect-url"] = rd
@@ -210,7 +219,7 @@ func (db *DB) AuthenticateHandler(w http.ResponseWriter, r *http.Request, userna
 		Path:     "/",
 		MaxAge:   86400,
 		HttpOnly: true,
-		Domain:   ".filip.st",
+		Domain:   domain,
 	}
 	if err := session.Save(r, w); err != nil {
 		return false, fmt.Errorf("failed to save session: %v", err)
