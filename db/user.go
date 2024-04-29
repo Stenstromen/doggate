@@ -60,14 +60,27 @@ func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username,
 	session.Values["authenticated"] = true
 	session.Values["username"] = username
 
-	redirectURL := session.Values["redirect-url"].(string)
+	redirectURL := session.Values["redirect-url"]
+
+	if redirectURL == nil {
+		http.Error(w, "Redirect URL not found", http.StatusInternalServerError)
+		return false
+	}
+
+	redirectUR, ok := redirectURL.(string)
+	if !ok {
+		http.Error(w, "Failed to cast redirect URL to string", http.StatusInternalServerError)
+		return false
+	}
+
+	fmt.Println("Redirecting to:", redirectUR)
 
 	if err := session.Save(r, w); err != nil {
 		log.Printf("Error saving session: %v", err)
 		return false
 	}
 
-	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+	http.Redirect(w, r, redirectUR, http.StatusSeeOther)
 	return true
 }
 
