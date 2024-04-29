@@ -89,7 +89,7 @@ func Handlers(db *db.DB) *http.ServeMux {
 			return
 		}
 		if auth {
-			http.Redirect(w, r, "/otp?username="+username, http.StatusSeeOther)
+			http.Redirect(w, r, "/otp?username="+username+"rd="+rd, http.StatusSeeOther)
 		}
 	})
 
@@ -99,8 +99,13 @@ func Handlers(db *db.DB) *http.ServeMux {
 			http.Error(w, "Username is required", http.StatusBadRequest)
 			return
 		}
+		rd := r.URL.Query().Get("rd")
+		if rd == "" {
+			http.Error(w, "Redirect URL is required", http.StatusBadRequest)
+			return
+		}
 
-		otpPage := db.OtpHandler(username)
+		otpPage := db.OtpHandler(username, rd)
 
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
@@ -121,13 +126,14 @@ func Handlers(db *db.DB) *http.ServeMux {
 		r.ParseForm()
 		username := r.Form.Get("username")
 		otp := r.Form.Get("otp")
+		rd := r.Form.Get("rd")
 
 		if username == "" || otp == "" {
 			http.Error(w, "Username and OTP are required", http.StatusBadRequest)
 			return
 		}
 
-		auth := db.VerifyOtpHandler(w, r, username, otp)
+		auth := db.VerifyOtpHandler(w, r, username, otp, rd)
 
 		if !auth {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)

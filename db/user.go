@@ -29,7 +29,7 @@ func init() {
 	store = sessions.NewCookieStore([]byte(secretKey))
 }
 
-func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username, otp string) bool {
+func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username, otp, rd string) bool {
 	session, err := store.Get(r, "session-name")
 	if err != nil {
 		http.Error(w, "Failed to get session", http.StatusInternalServerError)
@@ -60,31 +60,20 @@ func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username,
 	session.Values["authenticated"] = true
 	session.Values["username"] = username
 
-	redirectURL := session.Values["redirect-url"]
+	redirectURL := rd
 
-	if redirectURL == nil {
-		http.Error(w, "Redirect URL not found", http.StatusInternalServerError)
-		return false
-	}
-
-	redirectUR, ok := redirectURL.(string)
-	if !ok {
-		http.Error(w, "Failed to cast redirect URL to string", http.StatusInternalServerError)
-		return false
-	}
-
-	fmt.Println("Redirecting to:", redirectUR)
+	fmt.Println("Redirect URL:", redirectURL)
 
 	if err := session.Save(r, w); err != nil {
 		log.Printf("Error saving session: %v", err)
 		return false
 	}
 
-	http.Redirect(w, r, redirectUR, http.StatusSeeOther)
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 	return true
 }
 
-func (db *DB) OtpHandler(username string) string {
+func (db *DB) OtpHandler(username, rd string) string {
 	tmplString := `
 <!DOCTYPE html>
 <html lang="en">
@@ -140,6 +129,7 @@ func (db *DB) OtpHandler(username string) string {
         <h2>Enter OTP</h2>
         <form action="/verify-otp" method="post">
             <input type="hidden" name="username" value="{{.Username}}">
+			<input type="hidden" name="rd" value="{{.RedirectURL}}">
             <label for="otp">OTP:</label>
             <input type="text" id="otp" name="otp" required><br><br>
             <button type="submit">Verify</button>
@@ -153,7 +143,14 @@ func (db *DB) OtpHandler(username string) string {
 		log.Fatal("Error parsing template:", err)
 	}
 
-	data := model.PageData{Username: username}
+	data := struct {
+		Username    string
+		RedirectURL string
+	}{
+		Username:    username,
+		RedirectURL: rd,
+	}
+
 	var tplBuffer bytes.Buffer
 	if err := tmpl.Execute(&tplBuffer, data); err != nil {
 		log.Fatal("Error executing template:", err)
