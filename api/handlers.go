@@ -89,7 +89,7 @@ func Handlers(db *db.DB) *http.ServeMux {
 			return
 		}
 		if auth {
-			http.Redirect(w, r, "/otp?username="+username+"rd="+rd, http.StatusSeeOther)
+			http.Redirect(w, r, "/otp?username="+username+"&rd="+rd, http.StatusSeeOther)
 		}
 	})
 
