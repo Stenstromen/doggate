@@ -28,15 +28,6 @@ func init() {
 	store = sessions.NewCookieStore([]byte(secretKey))
 }
 
-func getDomainFromURL(redirectURL string) (string, error) {
-	parsedURL, err := url.Parse(redirectURL)
-	if err != nil {
-		return "", err
-	}
-	fmt.Println("Hostname:", parsedURL.Hostname())
-	return parsedURL.Hostname(), nil
-}
-
 func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username, otp string) bool {
 	session, err := store.Get(r, "session-name")
 	if err != nil {
@@ -52,7 +43,6 @@ func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username,
 			session.Save(r, w)
 			return false
 		}
-
 		log.Printf("Error retrieving user TOTP secret: %v", err)
 		session.AddFlash("Internal server error")
 		session.Save(r, w)
@@ -69,36 +59,45 @@ func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username,
 	session.Values["authenticated"] = true
 	session.Values["username"] = username
 
-	redirectURL, ok := session.Values["redirect-url"].(string)
-	if !ok || redirectURL == "" {
-		redirectURL = "/"
-	}
-	domain, err := getDomainFromURL(redirectURL)
+	redirectURL := getRedirectURL(session)
+	domain, err := getDomainForCookie(redirectURL)
 	if err != nil {
 		log.Printf("Error parsing domain from URL: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return false
 	}
-	session.Options.Domain = domain
-	session.Options.Secure = true
-	session.Options.HttpOnly = true
+
+	session.Options = &sessions.Options{
+		Path:     "/",
+		Domain:   domain,
+		MaxAge:   86400 * 7,
+		Secure:   true,
+		HttpOnly: true,
+	}
 
 	if err := session.Save(r, w); err != nil {
 		log.Printf("Error saving session: %v", err)
 		return false
 	}
 
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-	w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-	}
-
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 	return true
+}
+
+func getRedirectURL(session *sessions.Session) string {
+	redirectURL, ok := session.Values["redirect-url"].(string)
+	if !ok || redirectURL == "" {
+		return "/"
+	}
+	return redirectURL
+}
+
+func getDomainForCookie(redirectURL string) (string, error) {
+	parsedURL, err := url.Parse(redirectURL)
+	if err != nil {
+		return "", err
+	}
+	return "." + parsedURL.Hostname(), nil
 }
 
 func (db *DB) OtpHandler(username string) string {
