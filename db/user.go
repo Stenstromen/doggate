@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
+	"html"
 	"html/template"
 	"log"
 	"net/http"
@@ -178,7 +179,7 @@ func (db *DB) OtpHandler(username string) string {
 	return tplBuffer.String()
 }
 
-func (db *DB) AuthenticateHandler(w http.ResponseWriter, r *http.Request, username, password string) (bool, error) {
+func (db *DB) AuthenticateHandler(w http.ResponseWriter, r *http.Request, username, password, rd string) (bool, error) {
 	session, err := store.Get(r, "session-name")
 	if err != nil {
 		return false, fmt.Errorf("error retrieving session: %v", err)
@@ -204,6 +205,13 @@ func (db *DB) AuthenticateHandler(w http.ResponseWriter, r *http.Request, userna
 
 	session.Values["authenticated"] = true
 	session.Values["username"] = username
+	session.Values["redirect-url"] = rd
+	session.Options = &sessions.Options{
+		Path:     "/",
+		MaxAge:   86400,
+		HttpOnly: true,
+		Domain:   ".filip.st",
+	}
 	if err := session.Save(r, w); err != nil {
 		return false, fmt.Errorf("failed to save session: %v", err)
 	}
@@ -256,86 +264,71 @@ func (db *DB) DeleteUser(username string) (bool, error) {
 	return true, nil
 }
 
-func (db *DB) LoginHandler(w http.ResponseWriter, r *http.Request, rd string) string {
-	session, err := store.Get(r, "session-name")
-	if err != nil {
-		fmt.Println("Session error")
-	}
-
-	parseURL, err := url.Parse(rd)
-	if err != nil {
-		fmt.Println("Error parsing URL")
-	}
-
-	session.Values["redirect-url"] = parseURL.String()
-
-	if err := session.Save(r, w); err != nil {
-		fmt.Println("Error saving session")
-	}
-
-	tmplString := `<!DOCTYPE html>
-	<html lang="en">
-	<head>
-		<meta charset="UTF-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>Login</title>
-		<style>
-			body {
-				font-family: Arial, sans-serif;
-				display: flex;
-				justify-content: center;
-				align-items: center;
-				height: 100vh;
-				margin: 0;
-				background-color: #f4f4f4;
-			}
-			.login-box {
-				background: white;
-				padding: 20px;
-				border-radius: 8px;
-				box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-				width: 300px;
-			}
-			form {
-				display: flex;
-				flex-direction: column;
-			}
-			label {
-				margin-bottom: 5px;
-			}
-			input[type="text"], input[type="password"] {
-				padding: 10px;
-				margin-bottom: 15px;
-				border: 1px solid #ccc;
-				border-radius: 4px;
-			}
-			button {
-				background-color: #007bff;
-				color: white;
-				padding: 10px;
-				border: none;
-				border-radius: 4px;
-				cursor: pointer;
-			}
-			button:hover {
-				background-color: #0056b3;
-			}
-		</style>
-	</head>
-	<body>
-		<div class="login-box">
-			<h2>Login</h2>
-			<form action="/auth" method="post">
-				<label for="username">Username:</label>
-				<input type="text" id="username" name="username" required>
-				<label for="password">Password:</label>
-				<input type="password" id="password" name="password" required>
-				<button type="submit">Login</button>
-			</form>
-		</div>
-	</body>
-	</html>
-		`
+func (db *DB) LoginHandler(rd string) string {
+	tmplString := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f4f4;
+        }
+        .login-box {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            width: 300px;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            margin-bottom: 5px;
+        }
+        input[type="text"], input[type="password"] {
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h2>Login</h2>
+        <form action="/auth" method="post">
+            <input type="hidden" name="rd" value="%s">  <!-- Hidden field for redirect destination -->
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username" required>
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" required>
+            <button type="submit">Login</button>
+        </form>
+    </div>
+</body>
+</html>
+`, html.EscapeString(rd)) // Ensure rd is escaped to prevent XSS attacks
 
 	return tmplString
 }

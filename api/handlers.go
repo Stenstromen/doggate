@@ -19,7 +19,7 @@ func Handlers(db *db.DB) *http.ServeMux {
 			return
 		}
 
-		loginPage := db.LoginHandler(w, r, rd)
+		loginPage := db.LoginHandler(rd)
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(loginPage))
@@ -76,8 +76,9 @@ func Handlers(db *db.DB) *http.ServeMux {
 		r.ParseForm()
 		username := r.Form.Get("username")
 		password := r.Form.Get("password")
+		rd := r.Form.Get("rd")
 
-		auth, err := db.AuthenticateHandler(w, r, username, password)
+		auth, err := db.AuthenticateHandler(w, r, username, password, rd)
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
