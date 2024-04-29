@@ -262,7 +262,13 @@ func (db *DB) LoginHandler(w http.ResponseWriter, r *http.Request, rd string) st
 		fmt.Println("Session error")
 	}
 
-	session.Values["redirect-url"] = rd
+	parseURL, err := url.Parse(rd)
+	if err != nil {
+		fmt.Println("Error parsing URL")
+	}
+
+	session.Values["redirect-url"] = parseURL.String()
+
 	if err := session.Save(r, w); err != nil {
 		fmt.Println("Error saving session")
 	}
