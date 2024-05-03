@@ -8,6 +8,8 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+var encryptionKey string
+
 type DB struct {
 	Conn *sql.DB
 }
@@ -28,6 +30,11 @@ func (db *DB) ConnectionCheck() error {
 }
 
 func (db *DB) InitializeDB() error {
+	encryptionKey = os.Getenv("MYSQL_ENCRYPTION_KEY")
+	if encryptionKey == "" {
+		return fmt.Errorf("encryption key not set")
+	}
+
 	dsn := os.Getenv("MYSQL_DSN")
 	if dsn == "" {
 		return fmt.Errorf("MYSQL_DSN environment variable is not set")
@@ -42,7 +49,7 @@ func (db *DB) InitializeDB() error {
         id INT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(255) NOT NULL UNIQUE,
 		password VARCHAR(255) NOT NULL,
-		totp_secret VARCHAR(255) NOT NULL
+		totp_secret VARBINARY(256) NOT NULL
     );`
 
 	if _, err := db.Conn.Exec(createTableSQL); err != nil {

@@ -9,22 +9,7 @@ import (
 )
 
 func Handlers(db *db.DB) *http.ServeMux {
-
 	r := http.NewServeMux()
-
-	r.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
-		rd := r.URL.Query().Get("rd")
-		if rd == "" {
-			http.Error(w, "Redirect URL is required", http.StatusBadRequest)
-			return
-		}
-
-		loginPage := db.LoginHandler(rd)
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(loginPage))
-	})
-
 	r.HandleFunc("POST /register", func(w http.ResponseWriter, r *http.Request) {
 		var userRequest model.UserRequest
 		if err := json.NewDecoder(r.Body).Decode(&userRequest); err != nil {
@@ -72,14 +57,15 @@ func Handlers(db *db.DB) *http.ServeMux {
 		w.Write([]byte(registerPage))
 	})
 
-	r.HandleFunc("POST /auth", func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
-		username := r.Form.Get("username")
-		password := r.Form.Get("password")
-		rd := r.Form.Get("rd")
+	r.HandleFunc("GET /auth", func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Please enter your username and password"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 
-		auth, err := db.AuthenticateHandler(w, r, username, password, rd)
-
+		auth, err := db.AuthenticateHandler(username, password)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -88,24 +74,6 @@ func Handlers(db *db.DB) *http.ServeMux {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if auth {
-			http.Redirect(w, r, "/otp?username="+username+"&rd="+rd, http.StatusSeeOther)
-		}
-	})
-
-	r.HandleFunc("GET /otp", func(w http.ResponseWriter, r *http.Request) {
-		username := r.URL.Query().Get("username")
-		if username == "" {
-			http.Error(w, "Username is required", http.StatusBadRequest)
-			return
-		}
-		rd := r.URL.Query().Get("rd")
-		if rd == "" {
-			http.Error(w, "Redirect URL is required", http.StatusBadRequest)
-			return
-		}
-
-		otpPage := db.OtpHandler(username, rd)
 
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
@@ -114,50 +82,8 @@ func Handlers(db *db.DB) *http.ServeMux {
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
-			return
 		}
 
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(otpPage))
-	})
-
-	r.HandleFunc("POST /verify-otp", func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
-		username := r.Form.Get("username")
-		otp := r.Form.Get("otp")
-		rd := r.Form.Get("rd")
-
-		if username == "" || otp == "" {
-			http.Error(w, "Username and OTP are required", http.StatusBadRequest)
-			return
-		}
-
-		auth := db.VerifyOtpHandler(w, r, username, otp, rd)
-
-		if !auth {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-	})
-
-	r.HandleFunc("GET /validate", func(w http.ResponseWriter, r *http.Request) {
-		session := db.ValidateSessionHandler(w, r)
-
-		if !session {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
 		w.WriteHeader(http.StatusOK)
 	})
 

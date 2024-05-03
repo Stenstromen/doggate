@@ -1,219 +1,72 @@
 package db
 
 import (
-	"bytes"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
-	"html"
-	"html/template"
 	"log"
-	"net/http"
-	"net/url"
-	"os"
+	"time"
 
-	"github.com/gorilla/sessions"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 
 	model "github.com/stenstromen/doggate/model"
 )
 
-var store *sessions.CookieStore
+var sessionUsers model.Users
 
-func init() {
-	secretKey := os.Getenv("SESSION_SECRET_KEY")
-	if secretKey == "" {
-		log.Fatal("SESSION_SECRET_KEY environment variable is not set or empty")
-	}
-
-	store = sessions.NewCookieStore([]byte(secretKey))
-}
-
-func (db *DB) VerifyOtpHandler(w http.ResponseWriter, r *http.Request, username, otp, rd string) bool {
-	session, err := store.Get(r, "session-name")
-	if err != nil {
-		http.Error(w, "Failed to get session", http.StatusInternalServerError)
-		return false
-	}
-
-	var totpSecret string
-	err = db.Conn.QueryRow("SELECT totp_secret FROM users WHERE username = ?", username).Scan(&totpSecret)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			session.AddFlash("User not found")
-			session.Save(r, w)
-			return false
+func (db *DB) AuthenticateHandler(username, passwordAndOTP string) (bool, error) {
+	for _, user := range sessionUsers {
+		if user.Username == username {
+			if time.Since(user.Timestamp) > 90*24*time.Hour {
+				fmt.Println("Session expired, re-authenticating...")
+				break
+			}
+			storedPassword, err := base64.URLEncoding.DecodeString(user.Password)
+			if err != nil {
+				return false, err
+			}
+			if passwordAndOTP == string(storedPassword) {
+				return true, nil
+			}
 		}
-		log.Printf("Error retrieving user TOTP secret: %v", err)
-		session.AddFlash("Internal server error")
-		session.Save(r, w)
-		return false
 	}
 
-	valid := totp.Validate(otp, totpSecret)
-	if !valid {
-		session.AddFlash("Invalid OTP")
-		session.Save(r, w)
-		return false
-	}
+	fmt.Println("Proceeding with authentication...")
 
-	session.Values["authenticated"] = true
-	session.Values["username"] = username
-
-	redirectURL := rd
-
-	fmt.Println("Redirect URL:", redirectURL)
-
-	if err := session.Save(r, w); err != nil {
-		log.Printf("Error saving session: %v", err)
-		return false
-	}
-
-	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-	return true
-}
-
-func (db *DB) OtpHandler(username, rd string) string {
-	tmplString := `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enter OTP</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f4f4f4;
-        }
-        .login-box {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-            width: 300px;
-        }
-        form {
-            display: flex;
-            flex-direction: column;
-        }
-        label {
-            margin-bottom: 5px;
-        }
-        input[type="text"], input[type="password"] {
-            padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        button {
-            background-color: #007bff;
-            color: white;
-            padding: 10px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-    </style>
-</head>
-<body>
-    <div class="login-box">
-        <h2>Enter OTP</h2>
-        <form action="/verify-otp" method="post">
-            <input type="hidden" name="username" value="{{.Username}}">
-			<input type="hidden" name="rd" value="{{.RedirectURL}}">
-            <label for="otp">OTP:</label>
-            <input type="text" id="otp" name="otp" required><br><br>
-            <button type="submit">Verify</button>
-        </form>
-    </div>
-</body>
-</html>`
-
-	tmpl, err := template.New("otp").Parse(tmplString)
-	if err != nil {
-		log.Fatal("Error parsing template:", err)
-	}
-
-	data := struct {
-		Username    string
-		RedirectURL string
-	}{
-		Username:    username,
-		RedirectURL: rd,
-	}
-
-	var tplBuffer bytes.Buffer
-	if err := tmpl.Execute(&tplBuffer, data); err != nil {
-		log.Fatal("Error executing template:", err)
-	}
-
-	return tplBuffer.String()
-}
-
-func (db *DB) AuthenticateHandler(w http.ResponseWriter, r *http.Request, username, password, rd string) (bool, error) {
-	session, err := store.Get(r, "session-name")
-	if err != nil {
-		return false, fmt.Errorf("error retrieving session: %v", err)
-	}
+	otp := passwordAndOTP[len(passwordAndOTP)-6:]
+	password := passwordAndOTP[:len(passwordAndOTP)-6]
 
 	var hashedPassword string
-	err = db.Conn.QueryRow("SELECT password FROM users WHERE username = ?", username).Scan(&hashedPassword)
+	err := db.Conn.QueryRow("SELECT password FROM users WHERE username = ?", username).Scan(&hashedPassword)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			session.AddFlash("Invalid username or password")
-			session.Save(r, w)
 			return false, nil
 		}
-
 		return false, fmt.Errorf("database error: %v", err)
 	}
 
 	if err = bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)); err != nil {
-		session.AddFlash("Invalid username or password")
-		session.Save(r, w)
 		return false, nil
 	}
 
-	parsedURL, err := url.Parse(rd)
+	var totpSecret string
+	err = db.Conn.QueryRow("SELECT AES_DECRYPT(totp_secret, ?) FROM users WHERE username = ?", encryptionKey, username).Scan(&totpSecret)
 	if err != nil {
-		return false, fmt.Errorf("error parsing redirect URL: %v", err)
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		log.Printf("Error retrieving user TOTP secret: %v", err)
+		return false, nil
 	}
 
-	domain := parsedURL.Hostname()
-
-	fmt.Println("Domain:", domain)
-
-	session.Values["authenticated"] = true
-	session.Values["username"] = username
-	session.Values["redirect-url"] = rd
-	session.Options = &sessions.Options{
-		Path:     "/",
-		MaxAge:   86400,
-		HttpOnly: true,
-		Domain:   domain,
-	}
-	if err := session.Save(r, w); err != nil {
-		return false, fmt.Errorf("failed to save session: %v", err)
+	valid := totp.Validate(otp, totpSecret)
+	if !valid {
+		return false, nil
 	}
 
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-	w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-	}
-
+	obfuscatedPassword := base64.URLEncoding.EncodeToString([]byte(passwordAndOTP))
+	sessionUsers = append(sessionUsers, model.AuthUser{Username: username, Password: obfuscatedPassword, Timestamp: time.Now()})
 	return true, nil
 }
 
@@ -223,6 +76,7 @@ func (db *DB) RegisterHandler(username, password string) (model.User, error) {
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		fmt.Println("Error generating password hash:", err)
 		return model.User{}, err
 	}
 	user.Password = string(hashedPassword)
@@ -232,12 +86,14 @@ func (db *DB) RegisterHandler(username, password string) (model.User, error) {
 		AccountName: username,
 	})
 	if err != nil {
+		fmt.Println("Error generating TOTP secret:", err)
 		return model.User{}, err
 	}
 	user.TOTPSecret = totpSecret.Secret()
 
-	_, err = db.Conn.Exec("INSERT INTO users (username, password, totp_secret) VALUES (?, ?, ?)", username, user.Password, user.TOTPSecret)
+	_, err = db.Conn.Exec("INSERT INTO users (username, password, totp_secret) VALUES (?, ?, AES_ENCRYPT(?, ?))", username, user.Password, totpSecret.Secret(), encryptionKey)
 	if err != nil {
+		fmt.Println("Error inserting user into database:", err)
 		return model.User{}, err
 	}
 
@@ -251,94 +107,6 @@ func (db *DB) DeleteUser(username string) (bool, error) {
 	}
 
 	return true, nil
-}
-
-func (db *DB) LoginHandler(rd string) string {
-	tmplString := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f4f4f4;
-        }
-        .login-box {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-            width: 300px;
-        }
-        form {
-            display: flex;
-            flex-direction: column;
-        }
-        label {
-            margin-bottom: 5px;
-        }
-        input[type="text"], input[type="password"] {
-            padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        button {
-            background-color: #007bff;
-            color: white;
-            padding: 10px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-    </style>
-</head>
-<body>
-    <div class="login-box">
-        <h2>Login</h2>
-        <form action="/auth" method="post">
-            <input type="hidden" name="rd" value="%s">  <!-- Hidden field for redirect destination -->
-            <label for="username">Username:</label>
-            <input type="text" id="username" name="username" required>
-            <label for="password">Password:</label>
-            <input type="password" id="password" name="password" required>
-            <button type="submit">Login</button>
-        </form>
-    </div>
-</body>
-</html>
-`, html.EscapeString(rd)) // Ensure rd is escaped to prevent XSS attacks
-
-	return tmplString
-}
-
-func (db *DB) ValidateSessionHandler(w http.ResponseWriter, r *http.Request) bool {
-	session, err := store.Get(r, "session-name")
-	if err != nil {
-		http.Error(w, "Session error", http.StatusInternalServerError)
-	}
-
-	fmt.Println("Cookie values:", r.Header.Get("Cookie"))
-
-	fmt.Println("Session values:", session.Values)
-
-	if auth, ok := session.Values["authenticated"].(bool); ok && auth {
-		fmt.Println("Session values:", session.Values)
-		fmt.Println("Cookie values:", r.Header.Get("Cookie"))
-		return true
-	}
-
-	return false
 }
 
 func (db *DB) RegistrationHandler() string {
@@ -424,7 +192,7 @@ document.getElementById('registerForm').onsubmit = function(e) {
         var issuer = 'DogGate';
         var otpAuthUrl = 'otpauth://totp/' + issuer + ':' + username + '?secret=' + data.TOTPSecret + '&issuer=' + issuer;
 
-        resultDiv.innerHTML = '<p>Registration successful!<br>Username: ' + username + 
+        resultDiv.innerHTML = '<p>Registration successful!<br>Username: ' + username +
                               '<br>Scan the QR code with your TOTP app or enter this key manually: <strong>' + data.TOTPSecret + '</strong></p>';
 
         var qrDiv = document.createElement('div');
@@ -443,7 +211,7 @@ document.getElementById('registerForm').onsubmit = function(e) {
         document.getElementById('result').innerHTML = '<p style="color: red;">Registration failed!</p>';
     });
 };
-</script>    
+</script>
 </body>
 </html>
         `

@@ -4,7 +4,9 @@
 
 DogGate, a simple and easy authentication system for your web applications.
 
-Featuring account registration, login, and validation.
+Featuring account registration, login, and two-factor authentication.
+
+Passwords are stored as bcrypt hashes in the database and TOTP secrets are encrypted with AES.
 
 ## Features
 
@@ -30,8 +32,7 @@ kind: Ingress
 metadata:
   name: my-ingress
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: "http://doggate-service.doggate-namespace.svc.cluster.local/validate"
-    nginx.ingress.kubernetes.io/auth-signin: "http://doggate-service.doggate-namespace.svc.cluster.local/login"
+    nginx.ingress.kubernetes.io/auth-url: "http://doggate-service.doggate-namespace.svc.cluster.local/auth"
 spec:
   rules:
   - host: my-app.example.com
@@ -46,9 +47,21 @@ spec:
               number: 80
 ```
 
+## Registration Flow
+
+1. User registers an account with their username and password at the `/register` endpoint.
+1. DogGate stores the user's username and password in the database.
+1. A TOTP QR code is generated for the user.
+1. The user scans the TOTP QR code with their authenticator app.
+
+## Login Flow
+
+1. User logs in (basic auth) with their username and password+totp code at the `/auth` endpoint. The TOTP code should be appended to the password, e.g., `password123456`.
+1. The entered username and password+totp are valid for 90 days, or until the binary restarts, after which the user must re-authenticate.
+
 ## Dev
 
-### Secret Key for Cookie Store
+### Secret Key for TOTP Encryption
 
 ```bash
 openssl rand -hex 32 > .secret
@@ -71,7 +84,7 @@ podman run --rm \
 ### Run
 
 ```bash
-SESSION_SECRET_KEY=$(cat .secret) \
+MYSQL_ENCRYPTION_KEY=$(cat .secret) \
 MYSQL_DSN="root:root@tcp(localhost:3306)/doggate" \
 go run .
 ```
