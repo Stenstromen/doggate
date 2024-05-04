@@ -10,6 +10,21 @@ import (
 
 func Handlers(db *db.DB) *http.ServeMux {
 	r := http.NewServeMux()
+
+	r.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	r.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
+		err := db.ConnectionCheck()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	})
+
 	r.HandleFunc("POST /register", func(w http.ResponseWriter, r *http.Request) {
 		var userRequest model.UserRequest
 		if err := json.NewDecoder(r.Body).Decode(&userRequest); err != nil {
