@@ -1,5 +1,8 @@
 name: DogGate CI
 
+permissions:
+  packages: write
+
 on:
   release:
     types: [created]
