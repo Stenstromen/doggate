@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 
@@ -14,17 +15,20 @@ import (
 )
 
 func (db *DB) AuthenticateHandler(username, passwordAndOTP string) (bool, error) {
-	var obfuscatedPassword string
-	err := db.Conn.QueryRow("SELECT AES_DECRYPT(password, ?) FROM sessions WHERE username = ?", encryptionKey, username).Scan(&obfuscatedPassword)
-
+	rows, err := db.Conn.Query("SELECT session_id, AES_DECRYPT(password, ?), CAST(timestamp AS CHAR) FROM sessions WHERE username = ? ORDER BY timestamp DESC", encryptionKey, username)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			fmt.Println(username, "username not found in sessions, proceeding with authentication...")
-		} else {
-			log.Printf("Error retrieving user password: %v", err)
+		log.Printf("Error retrieving sessions: %v", err)
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var sessionId, obfuscatedPassword, timestampStr string
+		if err := rows.Scan(&sessionId, &obfuscatedPassword, &timestampStr); err != nil {
+			log.Printf("Error scanning session: %v", err)
 			return false, err
 		}
-	} else {
+
 		decodedPassword, err := base64.URLEncoding.DecodeString(obfuscatedPassword)
 		if err != nil {
 			log.Printf("Error decoding password: %v", err)
@@ -33,15 +37,7 @@ func (db *DB) AuthenticateHandler(username, passwordAndOTP string) (bool, error)
 		passwordAndOTPFromDB := string(decodedPassword)
 
 		if passwordAndOTP != passwordAndOTPFromDB {
-			fmt.Println(username, "password mismatch, re-authenticating...")
-			return false, nil
-		}
-
-		var timestampStr string
-		err = db.Conn.QueryRow("SELECT CAST(timestamp AS CHAR) FROM sessions WHERE username = ?", username).Scan(&timestampStr)
-		if err != nil {
-			log.Printf("Error retrieving session timestamp: %v", err)
-			return false, err
+			continue
 		}
 
 		timestamp, err := time.Parse("2006-01-02 15:04:05", timestampStr)
@@ -51,15 +47,25 @@ func (db *DB) AuthenticateHandler(username, passwordAndOTP string) (bool, error)
 		}
 
 		if time.Since(timestamp) > 30*24*time.Hour {
-			fmt.Println(username, "session expired, re-authenticating...")
-			return false, nil
+			log.Printf("Deleting expired session %s", sessionId)
+			_, err = db.Conn.Exec("DELETE FROM sessions WHERE session_id = ?", sessionId)
+			if err != nil {
+				log.Printf("Error deleting expired session: %v", err)
+				return false, err
+			}
+			continue
 		}
 
-		fmt.Println(username, "authenticated successfully")
+		log.Printf("Session found for user %s", username)
 		return true, nil
 	}
 
-	fmt.Println("Proceeding with authentication...")
+	if err := rows.Err(); err != nil {
+		log.Printf("Error iterating over sessions: %v", err)
+		return false, err
+	}
+
+	log.Printf("Proceeding with authentication for user %s", username)
 
 	otp := passwordAndOTP[len(passwordAndOTP)-6:]
 	password := passwordAndOTP[:len(passwordAndOTP)-6]
@@ -92,8 +98,9 @@ func (db *DB) AuthenticateHandler(username, passwordAndOTP string) (bool, error)
 		return false, nil
 	}
 
-	obfuscatedPassword = base64.URLEncoding.EncodeToString([]byte(passwordAndOTP))
-	_, err = db.Conn.Exec("INSERT INTO sessions (username, password, timestamp) VALUES (?, AES_ENCRYPT(?, ?), ?)", username, obfuscatedPassword, encryptionKey, time.Now())
+	sessionId := uuid.New()
+	obfuscatedPassword := base64.URLEncoding.EncodeToString([]byte(passwordAndOTP))
+	_, err = db.Conn.Exec("INSERT INTO sessions (session_id, username, password, timestamp) VALUES (?, ?, AES_ENCRYPT(?, ?), ?)", sessionId, username, obfuscatedPassword, encryptionKey, time.Now())
 	if err != nil {
 		log.Printf("Error inserting session into database: %v", err)
 		return false, err
