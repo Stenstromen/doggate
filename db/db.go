@@ -56,5 +56,17 @@ func (db *DB) InitializeDB() error {
 		return fmt.Errorf("failed to create table: %v", err)
 	}
 
+	createSessionsTableSQL := `
+	CREATE TABLE IF NOT EXISTS sessions (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		username VARCHAR(255) NOT NULL UNIQUE,
+		password VARBINARY(256) NOT NULL,
+		timestamp TIMESTAMP NOT NULL
+	);`
+
+	if _, err := db.Conn.Exec(createSessionsTableSQL); err != nil {
+		return fmt.Errorf("failed to create sessions table: %v", err)
+	}
+
 	return nil
 }

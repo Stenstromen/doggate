@@ -1,7 +1,5 @@
 package model
 
-import "time"
-
 type User struct {
 	Username   string
 	Password   string
@@ -16,11 +14,3 @@ type UserRequest struct {
 type PageData struct {
 	Username string
 }
-
-type AuthUser struct {
-	Username  string
-	Password  string
-	Timestamp time.Time
-}
-
-type Users []AuthUser
