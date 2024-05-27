@@ -8,6 +8,8 @@ Featuring account registration, login, and two-factor authentication.
 
 Passwords are stored as bcrypt hashes in the database and TOTP secrets are encrypted with AES.
 
+Active logged in sessions are persistent and are also encrypted with AES.
+
 ## Features
 
 - **Simple**: DogGate is a simple and easy to use authentication system.
@@ -57,11 +59,24 @@ spec:
 ## Login Flow
 
 1. User logs in (basic auth) with their username and password+totp code at the `/auth` endpoint. The TOTP code should be appended to the password, e.g., `password123456`.
-1. The entered username and password+totp are valid for 90 days, or until the binary restarts, after which the user must re-authenticate.
+1. The entered username and password+totp are valid for 30 days, after which the user must re-authenticate.
+
+## Container Image
+
+### *Requires MySQL/MariaDB endpoint*
+
+```bash
+podman run --rm \
+--name doggate \
+-p 80:8080 \
+-e MYSQL_ENCRYPTION_KEY='random32bitstring' \
+-e MYSQL_DSN='username:password@proto(address:port)/database' \
+ghcr.io/stenstromen/doggate:latest
+```
 
 ## Dev
 
-### Secret Key for TOTP Encryption
+### Secret Key for TOTP and Session Encryption
 
 ```bash
 openssl rand -hex 32 > .secret
