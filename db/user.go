@@ -13,23 +13,50 @@ import (
 	model "github.com/stenstromen/doggate/model"
 )
 
-var sessionUsers model.Users
-
 func (db *DB) AuthenticateHandler(username, passwordAndOTP string) (bool, error) {
-	for _, user := range sessionUsers {
-		if user.Username == username {
-			if time.Since(user.Timestamp) > 90*24*time.Hour {
-				fmt.Println("Session expired, re-authenticating...")
-				break
-			}
-			storedPassword, err := base64.URLEncoding.DecodeString(user.Password)
-			if err != nil {
-				return false, err
-			}
-			if passwordAndOTP == string(storedPassword) {
-				return true, nil
-			}
+	var obfuscatedPassword string
+	err := db.Conn.QueryRow("SELECT AES_DECRYPT(password, ?) FROM sessions WHERE username = ?", encryptionKey, username).Scan(&obfuscatedPassword)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			fmt.Println(username, "username not found in sessions, proceeding with authentication...")
+		} else {
+			log.Printf("Error retrieving user password: %v", err)
+			return false, err
 		}
+	} else {
+		decodedPassword, err := base64.URLEncoding.DecodeString(obfuscatedPassword)
+		if err != nil {
+			log.Printf("Error decoding password: %v", err)
+			return false, err
+		}
+		passwordAndOTPFromDB := string(decodedPassword)
+
+		if passwordAndOTP != passwordAndOTPFromDB {
+			fmt.Println(username, "password mismatch, re-authenticating...")
+			return false, nil
+		}
+
+		var timestampStr string
+		err = db.Conn.QueryRow("SELECT CAST(timestamp AS CHAR) FROM sessions WHERE username = ?", username).Scan(&timestampStr)
+		if err != nil {
+			log.Printf("Error retrieving session timestamp: %v", err)
+			return false, err
+		}
+
+		timestamp, err := time.Parse("2006-01-02 15:04:05", timestampStr)
+		if err != nil {
+			log.Printf("Error parsing session timestamp: %v", err)
+			return false, err
+		}
+
+		if time.Since(timestamp) > 30*24*time.Hour {
+			fmt.Println(username, "session expired, re-authenticating...")
+			return false, nil
+		}
+
+		fmt.Println(username, "authenticated successfully")
+		return true, nil
 	}
 
 	fmt.Println("Proceeding with authentication...")
@@ -38,7 +65,7 @@ func (db *DB) AuthenticateHandler(username, passwordAndOTP string) (bool, error)
 	password := passwordAndOTP[:len(passwordAndOTP)-6]
 
 	var hashedPassword string
-	err := db.Conn.QueryRow("SELECT password FROM users WHERE username = ?", username).Scan(&hashedPassword)
+	err = db.Conn.QueryRow("SELECT password FROM users WHERE username = ?", username).Scan(&hashedPassword)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
@@ -65,8 +92,13 @@ func (db *DB) AuthenticateHandler(username, passwordAndOTP string) (bool, error)
 		return false, nil
 	}
 
-	obfuscatedPassword := base64.URLEncoding.EncodeToString([]byte(passwordAndOTP))
-	sessionUsers = append(sessionUsers, model.AuthUser{Username: username, Password: obfuscatedPassword, Timestamp: time.Now()})
+	obfuscatedPassword = base64.URLEncoding.EncodeToString([]byte(passwordAndOTP))
+	_, err = db.Conn.Exec("INSERT INTO sessions (username, password, timestamp) VALUES (?, AES_ENCRYPT(?, ?), ?)", username, obfuscatedPassword, encryptionKey, time.Now())
+	if err != nil {
+		log.Printf("Error inserting session into database: %v", err)
+		return false, err
+	}
+
 	return true, nil
 }
 
